@@ -29,13 +29,18 @@
         <div class="brand-mini">白色失明文字麻将</div>
         <div class="room-chip">房间 <strong id="roomCode"></strong><button id="copy" class="icon-btn" title="复制房间码">复制</button></div>
         <div class="deck-chip">余牌 <strong id="deckCount"></strong></div>
-        <button id="restart" class="mahjong-btn restart-btn hidden">重开本局</button>
+        <div class="host-actions">
+          <button id="restart" class="mahjong-btn restart-btn hidden">重开本局</button>
+          <button id="endGame" class="mahjong-btn end-game-btn hidden">结束对局</button>
+        </div>
       </header>
 
       <div class="table-layout">
         <aside class="side-panel players-panel">
           <div class="panel-title">牌友</div>
           <div id="players" class="players-list"></div>
+          <div class="leaderboard-title">房间累计积分</div>
+          <div id="leaderboard" class="leaderboard"></div>
           <button id="start" class="mahjong-btn primary hidden">开局</button>
           <div id="winner" class="winner"></div>
         </aside>
@@ -52,7 +57,7 @@
               <span class="center-name">白色失明</span>
             </div>
 
-            <div class="discard-zone">
+            <div id="discardZone" class="discard-zone">
               <div class="zone-label">牌河</div>
               <div id="discard" class="discard-list"></div>
             </div>
@@ -80,10 +85,8 @@
               <button id="draw" class="mahjong-btn draw-btn">摸牌</button>
               <button id="skip" class="mahjong-btn skip-btn">跳过不出</button>
               <button id="discardBtn" class="mahjong-btn discard-btn">出牌（至少3字）</button>
-              <div class="win-line">
-                <input id="sentence" class="mahjong-input sentence-input" placeholder="14字成句后输入胡牌句子">
-                <button id="win" class="mahjong-btn win-btn">胡</button>
-              </div>
+<div class="score-rule">每成功打出1字 +1分 · 最先打光手牌者获胜并 +10分</div>
+              <div class="homophone-tip">提示：允许使用谐音字，只要多数玩家认可即可。</div>
             </div>
           </div>
         </section>

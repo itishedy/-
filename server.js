@@ -11,12 +11,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 const rooms = new Map();
 
 const TILE_COUNTS = {
-  '我':3,'你':3,'他':2,'她':2,'的':4,'了':3,'是':2,'不':3,'在':2,'把':2,'被':2,'又':2,'还':1,'都':1,'就':1,'只':1,'要':1,'给':2,'和':1,'跟':1,'敢':1,'竟':1,'真':1,'别':1,'没':1,'吗':1,'啊':1,
-  '老':3,'板':3,'店':2,'长':2,'前':2,'任':2,'陪':3,'玩':3,'哥':2,'姐':2,'客':1,'人':1,'主':1,'播':1,'粉':1,'友':1,'鸡':2,'鸭':2,'宝':1,'贝':1,'富':1,'婆':1,
+  '我':3,'你':3,'他':2,'她':2,'的':4,'了':3,'是':2,'不':3,'在':2,'把':2,'被':2,'又':3,'还':2,'都':2,'就':1,'只':2,'才':2,'要':1,'给':2,'小':2,'大':2,'和':1,'跟':1,'敢':2,'竟':2,'真':2,'居':2,'然':2,'因':2,'为':2,'但':2,'别':1,'没':1,'吗':1,'啊':1,
+  '老':3,'板':3,'店':2,'长':2,'前':2,'现':2,'任':2,'陪':3,'玩':3,'哥':2,'姐':2,'客':1,'人':1,'主':1,'播':1,'粉':1,'友':1,'鸡':2,'鸭':2,'宝':1,'贝':1,'富':1,'婆':1,
   '游':1,'戏':1,'局':2,'排':1,'位':1,'分':1,'段':1,'上':2,'下':1,'输':1,'赢':1,'开':1,'黑':2,'组':1,'队':1,'野':1,'王':1,'者':1,'号':1,'服':1,'区':1,'麦':2,'语':1,'音':1,'房':2,'间':1,'单':3,'双':1,'坑':2,'带':2,
-  '接':2,'点':2,'包':1,'时':1,'钟':1,'钱':3,'付':1,'款':1,'退':2,'续':1,'加':2,'价':1,'免':1,'费':1,'礼':2,'物':2,'刷':2,'榜':1,
-  '爱':2,'亲':1,'抱':1,'哄':2,'骗':2,'绿':1,'追':1,'删':2,'拉':2,'吃':1,'醋':1,'哭':1,'舔':1,'跪':1,'跑':1,'找':1,'换':1,'选':1,'抢':1,
-  '菜':2,'猛':1,'强':1,'弱':1,'疯':2,'傻':1,'急':1,'惨':1,'穷':1,'帅':1,'丑':1,'甜':1,'凶':1,'冷':1,'热':1,'气':1,'酸':1,'爽':1,'麻':1,'挂':1,'夜':1,'躺':1,'飞':1,'掉':1,'炸':1
+  '接':2,'点':2,'报':2,'警':2,'包':1,'时':1,'钟':1,'钱':3,'付':1,'款':1,'退':2,'续':1,'加':2,'价':1,'免':1,'费':1,'礼':2,'物':2,'刷':2,'榜':1,
+  '爱':2,'亲':2,'抱':2,'哄':2,'骗':2,'偷':2,'背':2,'绿':2,'追':2,'甩':1,'婚':1,'约':2,'睡':2,'查':1,'删':2,'拉':2,'黑':2,'吃':1,'醋':2,'哭':1,'舔':2,'跪':2,'跑':1,'找':1,'换':1,'选':1,'抢':1,
+  '菜':3,'坑':3,'躺':2,'带':3,'飞':2,'骚':2,'送':2,'连':2,'跪':2,'炸':2,'猛':1,'强':1,'弱':1,'疯':2,'傻':1,'急':1,'惨':1,'穷':1,'帅':1,'丑':1,'甜':1,'凶':1,'冷':1,'热':1,'气':1,'酸':1,'爽':1,'麻':1,'挂':1,'夜':1,'掉':1
 };
 
 function buildDeck(){
@@ -55,7 +55,8 @@ function roomView(room, socketId){
     hostId: room.hostId,
     started: room.started,
     currentPlayerId: room.started ? room.players[room.turn]?.id : null,
-    players: room.players.map(p=>({id:p.id,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn})),
+    players: room.players.map(p=>({id:p.id,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn,score:p.score||0,totalScore:p.totalScore||0})),
+    leaderboard: [...room.scoreboard.values()].sort((a,b)=>(b.totalScore||0)-(a.totalScore||0)).map(x=>({name:x.name,totalScore:x.totalScore||0,online:room.players.some(p=>p.playerKey===x.playerKey)})),
     hand: me ? me.hand : [],
     discardGroups: room.discardGroups,
     pendingDiscard: pendingVoteView(room,socketId),
@@ -72,9 +73,9 @@ function startRound(room, isRestart=false){
   room.turn=0;
   room.started=true;
   room.lastWin=null;
-  room.players.forEach(p=>{ p.hand=[]; p.hasDrawn=false; });
+  room.players.forEach(p=>{ p.hand=[]; p.hasDrawn=false; p.score=0; });
   for(let r=0;r<13;r++) for(const p of room.players) p.hand.push(room.deck.pop());
-  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌。' : '游戏开始！每人13张；轮到你时先摸牌，再打出至少3个字，其他玩家投票过半才算成功。');
+  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌并清零本局积分。' : '游戏开始！每人13张；每回合摸1张后可打出至少3个字。出牌过半认可后永久离手；每字1分，先打光手牌者获胜并额外+10分。');
   broadcast(room);
 }
 function advanceTurn(room, playerId){
@@ -92,11 +93,23 @@ function resolvePendingDiscard(room, approved){
 
   if(approved){
     room.discardGroups.push({player:p.name,tiles:pd.tiles});
-    let replenished=0;
-    while(p.hand.length<13 && room.deck.length){ p.hand.push(room.deck.pop()); replenished++; }
+    p.score=(p.score||0)+pd.tiles.length;
+    p.totalScore=(p.totalScore||0)+pd.tiles.length;
+    const scoreEntry=room.scoreboard.get(p.playerKey);
+    if(scoreEntry){ scoreEntry.name=p.name; scoreEntry.totalScore=p.totalScore; }
     p.hasDrawn=false;
-    addLog(room,`✅ 「${pd.tiles.join('')}」获得过半认可，${p.name} 出牌成功${replenished?`，并补了${replenished}张`:''}`);
-    advanceTurn(room,p.id);
+    if(p.hand.length===0){
+      p.score+=10;
+      p.totalScore=(p.totalScore||0)+10;
+      const scoreEntry=room.scoreboard.get(p.playerKey);
+      if(scoreEntry){ scoreEntry.name=p.name; scoreEntry.totalScore=p.totalScore; }
+      room.lastWin={player:p.name,score:p.score,totalScore:p.totalScore};
+      room.started=false;
+      addLog(room,`🏆 ${p.name} 打光了全部手牌，本局获胜！清手奖励 +10 分，本局共 ${p.score} 分，房间累计 ${p.totalScore} 分。`);
+    }else{
+      addLog(room,`✅ 「${pd.tiles.join('')}」获得过半认可，${p.name} 出牌成功，+${pd.tiles.length}分，剩余${p.hand.length}张`);
+      advanceTurn(room,p.id);
+    }
   }else{
     p.hand.push(...pd.tiles);
     p.hasDrawn=true;
@@ -123,19 +136,23 @@ function checkPendingVote(room){
 }
 
 io.on('connection', socket=>{
-  socket.on('createRoom', ({name})=>{
+  socket.on('createRoom', ({name,playerKey})=>{
     name=String(name||'玩家').trim().slice(0,16)||'玩家';
+    playerKey=String(playerKey||socket.id).slice(0,80);
     const code=roomCode();
-    const room={code,hostId:socket.id,players:[{id:socket.id,name,hand:[],hasDrawn:false}],deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null};
+    const scoreboard=new Map([[playerKey,{playerKey,name,totalScore:0}]]);
+    const room={code,hostId:socket.id,players:[{id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:0}],scoreboard,deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null};
     rooms.set(code,room); socket.join(code); socket.data.room=code;
     broadcast(room);
   });
-  socket.on('joinRoom', ({code,name})=>{
-    code=String(code||'').trim().toUpperCase(); name=String(name||'玩家').trim().slice(0,16)||'玩家';
+  socket.on('joinRoom', ({code,name,playerKey})=>{
+    code=String(code||'').trim().toUpperCase(); name=String(name||'玩家').trim().slice(0,16)||'玩家'; playerKey=String(playerKey||socket.id).slice(0,80);
     const room=rooms.get(code); if(!room) return socket.emit('errorMsg','房间不存在');
     if(room.started) return socket.emit('errorMsg','游戏已经开始');
     if(room.players.length>=8) return socket.emit('errorMsg','房间已满（最多8人）');
-    room.players.push({id:socket.id,name,hand:[],hasDrawn:false}); socket.join(code); socket.data.room=code;
+    const saved=room.scoreboard.get(playerKey);
+    if(saved) saved.name=name; else room.scoreboard.set(playerKey,{playerKey,name,totalScore:0});
+    room.players.push({id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:saved?.totalScore||0}); socket.join(code); socket.data.room=code;
     addLog(room, `${name} 加入了房间`); broadcast(room);
   });
   socket.on('startGame', ()=>{
@@ -150,20 +167,40 @@ io.on('connection', socket=>{
     if(room.players.length<2) return socket.emit('errorMsg','至少需要2名玩家');
     startRound(room,true);
   });
+  socket.on('endGame', ()=>{
+    const room=rooms.get(socket.data.room); if(!room) return;
+    if(room.hostId!==socket.id) return socket.emit('errorMsg','只有房主可以结束对局');
+
+    const leaderboard=[...room.scoreboard.values()]
+      .sort((a,b)=>(b.totalScore||0)-(a.totalScore||0))
+      .map((x,i)=>({rank:i+1,name:x.name,totalScore:x.totalScore||0}));
+    const host=room.players.find(p=>p.id===socket.id);
+    io.to(room.code).emit('roomEnded',{endedBy:host?.name||'房主',leaderboard});
+
+    // “结束对局”会结算并关闭房间；所有客户端回到大厅，原房间码立即失效。
+    for(const player of room.players){
+      const client=io.sockets.sockets.get(player.id);
+      if(client){
+        client.leave(room.code);
+        client.data.room=null;
+      }
+    }
+    rooms.delete(room.code);
+  });
   socket.on('draw', ()=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started) return;
     if(room.pendingDiscard) return socket.emit('errorMsg','正在等待大家投票');
     const p=room.players[room.turn]; if(!p||p.id!==socket.id) return socket.emit('errorMsg','还没轮到你');
-    if(p.hasDrawn || p.hand.length>=14) return socket.emit('errorMsg','你已经有14张牌了，请出牌、胡牌或跳过');
-    if(!room.deck.length) return socket.emit('errorMsg','牌堆已经空了');
+    if(p.hasDrawn) return socket.emit('errorMsg','本回合已经摸过牌了，请出牌或跳过');
+    if(!room.deck.length){ p.hasDrawn=true; addLog(room,`牌堆已空，${p.name} 本轮无需摸牌`); return broadcast(room); }
     p.hand.push(room.deck.pop()); p.hasDrawn=true; addLog(room,`${p.name} 摸了一张牌`); broadcast(room);
   });
   socket.on('skipTurn', ()=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started) return;
     if(room.pendingDiscard) return socket.emit('errorMsg','正在等待大家投票');
     const p=room.players[room.turn]; if(!p||p.id!==socket.id) return socket.emit('errorMsg','还没轮到你');
-    if(!p.hasDrawn && p.hand.length<14) return socket.emit('errorMsg','请先摸牌再跳过');
-    p.hasDrawn=true;
+    if(!p.hasDrawn) return socket.emit('errorMsg','请先摸牌再跳过');
+    p.hasDrawn=false;
     addLog(room,`⏭️ ${p.name} 选择跳过，本轮不出牌`);
     advanceTurn(room,p.id);
     broadcast(room);
@@ -172,7 +209,7 @@ io.on('connection', socket=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started) return;
     if(room.pendingDiscard) return socket.emit('errorMsg','上一组出牌还在等待投票');
     const p=room.players[room.turn]; if(!p||p.id!==socket.id) return socket.emit('errorMsg','还没轮到你');
-    if(!p.hasDrawn && p.hand.length<14) return socket.emit('errorMsg','请先摸牌');
+    if(!p.hasDrawn) return socket.emit('errorMsg','请先摸牌');
 
     if(!Array.isArray(indices)) return socket.emit('errorMsg','请选择至少3张牌');
     const clean=[];
@@ -204,17 +241,8 @@ io.on('connection', socket=>{
     addLog(room,`${voter?.name||'玩家'} 已投票`);
     checkPendingVote(room);
   });
-  socket.on('declareWin', ({sentence})=>{
-    const room=rooms.get(socket.data.room); if(!room||!room.started) return;
-    if(room.pendingDiscard) return socket.emit('errorMsg','请先完成当前出牌投票');
-    const p=room.players.find(x=>x.id===socket.id); if(!p) return;
-    sentence=String(sentence||'').trim().slice(0,80);
-    if(p.hand.length!==14) return socket.emit('errorMsg','必须持有14张牌时胡牌');
-    const chars=[...sentence.replace(/[，。！？、,.!?\s]/g,'')];
-    const a=[...p.hand].sort().join(''), b=[...chars].sort().join('');
-    if(a!==b) return socket.emit('errorMsg','句子必须只使用你手里的14个字，并且每张牌都要用到');
-    room.lastWin={player:p.name,sentence,tiles:[...p.hand]}; room.started=false; room.pendingDiscard=null;
-    addLog(room,`🎉 ${p.name} 胡了：${sentence}`); broadcast(room);
+  socket.on('declareWin', ()=>{
+    socket.emit('errorMsg','新版规则无需手动胡牌：最先打光手牌的人自动获胜');
   });
   socket.on('chat', ({text})=>{
     const room=rooms.get(socket.data.room); if(!room) return;
