@@ -29,6 +29,7 @@
         <div class="brand-mini">白色失明文字麻将</div>
         <div class="room-chip">房间 <strong id="roomCode"></strong><button id="copy" class="icon-btn" title="复制房间码">复制</button></div>
         <div class="deck-chip">余牌 <strong id="deckCount"></strong></div>
+        <button id="restart" class="mahjong-btn restart-btn hidden">重开本局</button>
       </header>
 
       <div class="table-layout">
@@ -40,6 +41,7 @@
         </aside>
 
         <section class="mahjong-table">
+          <div id="tableSeats" class="table-seats"></div>
           <div class="table-rail top-rail"></div>
           <div class="table-rail left-rail"></div>
           <div class="table-rail right-rail"></div>
@@ -68,6 +70,7 @@
           </div>
 
           <div class="my-seat">
+            <div id="turnPrompt" class="turn-prompt">等待开局</div>
             <div class="hand-meta">
               <span>我的手牌</span>
               <span id="selectionHint" class="selection-hint">点击牌面选择</span>
@@ -75,6 +78,7 @@
             <div id="hand" class="tiles hand-tiles"></div>
             <div class="table-actions">
               <button id="draw" class="mahjong-btn draw-btn">摸牌</button>
+              <button id="skip" class="mahjong-btn skip-btn">跳过不出</button>
               <button id="discardBtn" class="mahjong-btn discard-btn">出牌（至少3字）</button>
               <div class="win-line">
                 <input id="sentence" class="mahjong-input sentence-input" placeholder="14字成句后输入胡牌句子">
