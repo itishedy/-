@@ -1,0 +1,10 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>陪玩梗文字麻将</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<section id="lobby" class="card"><h1>陪玩梗文字麻将</h1><p>老板、店长、前任、鸡鸭、陪玩、排位……随机拼出最离谱的14字句子。</p><input id="name" placeholder="你的昵称" maxlength="16"><div class="row"><button id="create">创建房间</button><input id="code" placeholder="房间码" maxlength="5"><button id="join">加入</button></div><p id="err" class="err"></p></section>
+<section id="game" class="hidden"><div class="top card"><div><b>房间：</b><span id="roomCode"></span> <button id="copy">复制房间码</button></div><div><b>牌堆：</b><span id="deckCount"></span></div></div>
+<div class="grid"><section class="card"><h2>玩家</h2><div id="players"></div><button id="start" class="hidden">开始游戏</button><div id="winner"></div></section>
+<section class="card board"><h2>弃牌区</h2><div id="discard" class="discard-list"></div>
+<div id="voteBox" class="vote-box hidden"><h2 id="voteTitle">等待认可</h2><div id="voteTiles" class="tiles small"></div><p id="voteCount" class="vote-count"></p><p id="voteStatus" class="hint"></p><div class="row"><button id="voteYes">认可 👍</button><button id="voteNo" class="secondary">不认可 👎</button></div></div>
+<h2>我的手牌</h2><div id="hand" class="tiles"></div><div class="actions"><button id="draw">摸牌</button><button id="discardBtn">提交出牌（至少3字）</button><input id="sentence" placeholder="摸到14张时，可按手牌组成14字句子胡牌"><button id="win">胡牌</button></div><p class="hint">出牌规则：摸到14张后，一次选择至少3个字提交；除出牌者外的玩家投票，认可票必须超过半数。通过后这组字进入弃牌区并自动补回13张；未通过则整组退回手牌，由原玩家重新出牌。</p></section>
+<section class="card"><h2>房间消息</h2><div id="feed"></div><div class="row"><input id="chat" placeholder="说点什么"><button id="send">发送</button></div></section></div></section>
+</main><script src="/socket.io/socket.io.js"></script><script src="app.js"></script></body></html>
