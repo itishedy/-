@@ -92,3 +92,115 @@ button{touch-action:manipulation}
 .self-seat-badge.active{border-color:#f0d36f;box-shadow:0 0 0 2px #f0d36f44,0 0 18px #e5c14a44}
 .hand-tiles{position:relative;z-index:5}
 @media(max-width:760px){.my-seat{padding-top:12px}.self-seat-badge{margin-bottom:8px;max-width:96%;padding:6px 10px}.self-seat-badge strong{font-size:12px}.self-seat-badge span{font-size:9px}}
+
+/* V11: dedicated mobile portrait layout */
+@media (max-width: 760px) and (orientation: portrait){
+  html,body,.app-shell,.game-screen{width:100%;max-width:100%;overflow-x:hidden}
+  .game-screen{min-height:100dvh;padding:0 0 env(safe-area-inset-bottom)}
+
+  .table-header{
+    width:100%;max-width:100%;min-height:0;height:auto;
+    display:grid;grid-template-columns:1fr auto auto;gap:6px;
+    padding:7px 8px;margin:0;background:#071e18;
+  }
+  .brand-mini{grid-column:1/-1;width:100%;font-size:15px;line-height:1.2;margin:0 0 2px;text-align:center}
+  .room-chip,.deck-chip{min-width:0;padding:6px 8px;font-size:11px;white-space:nowrap}
+  .room-chip{margin:0}
+  .host-actions{grid-column:1/-1;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:0}
+  .host-actions .mahjong-btn{width:100%;padding:7px 6px;font-size:12px}
+
+  .table-layout{display:flex;flex-direction:column;width:100%;max-width:100%;gap:0;margin:0;overflow:hidden}
+  .players-panel{order:1;width:100%;padding:6px 8px;background:#0d211b;border-top:1px solid #60472f;border-bottom:1px solid #60472f}
+  .players-list{display:flex;width:100%;gap:6px;margin:2px 0;overflow-x:auto;overflow-y:hidden;padding:2px 0 5px;scrollbar-width:none}
+  .players-list::-webkit-scrollbar{display:none}
+  .player{flex:0 0 auto;max-width:170px;padding:7px 9px 7px 33px;font-size:11px;white-space:nowrap}
+  .player:before{left:7px;width:19px;height:24px;font-size:11px}
+  .players-panel .winner{font-size:12px;margin:5px 0;padding:7px}
+  .players-panel #start{width:100%;margin-top:5px}
+
+  .mahjong-table{
+    order:2;width:100%;max-width:100%;min-width:0;min-height:0;
+    border-width:8px;border-left-width:7px;border-right-width:7px;border-radius:0;
+    overflow:hidden;display:block;
+  }
+  .mahjong-table:after{inset:3px}
+  .top-rail{top:10px;left:22%;right:22%;height:17px}
+  .left-rail,.right-rail{display:none}
+
+  .center-board{
+    width:100%;max-width:100%;min-height:285px;
+    padding:48px 5px 10px;justify-content:flex-end;overflow:hidden;
+  }
+  .center-mark{top:38px;width:62px;height:62px}
+  .center-mark .wind{font-size:24px}
+  .center-name{font-size:8px}
+  .discard-zone{
+    width:100%;max-width:100%;min-height:145px;max-height:190px;
+    margin:0;padding:10px 5px 8px;border-left:0;border-right:0;border-radius:0;
+    overflow-y:auto;overflow-x:hidden;
+  }
+  .discard-group{gap:3px;max-width:100%}
+  .discard-label{min-width:42px;max-width:55px;font-size:10px;padding-right:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .discard-zone .small .tile,.discard-zone .tile{width:29px;height:39px;font-size:18px;box-shadow:0 3px 0 #b7b9aa,0 4px 5px #001a1455}
+
+  .table-seat{min-width:62px;max-width:92px;padding:4px 5px;border-radius:7px}
+  .table-seat strong{font-size:10px}.table-seat span{font-size:8px}
+
+  .vote-box{position:fixed;left:50%;top:50%;width:calc(100vw - 24px);max-height:80dvh;overflow:auto;padding:14px;z-index:30}
+  .vote-tiles{gap:4px}
+
+  .my-seat{width:100%;max-width:100%;padding:9px 6px 12px;overflow:hidden}
+  .self-seat-badge{max-width:96%;margin-bottom:7px;padding:5px 8px}
+  .turn-prompt{width:100%;margin-bottom:7px;padding:8px 7px;font-size:12px;line-height:1.35}
+  .hand-meta{padding:0 2px;margin-bottom:2px;font-size:10px}
+
+  /* Mobile hands always wrap inside the viewport; no horizontal escape. */
+  .hand-tiles,
+  .hand-tiles.crowded,
+  .hand-tiles.very-crowded{
+    display:grid!important;
+    grid-template-columns:repeat(auto-fit,minmax(31px,38px));
+    justify-content:center;align-items:end;align-content:start;
+    width:100%;max-width:100%;min-height:0;max-height:none;
+    gap:8px 4px;margin:0;padding:13px 1px 7px;
+    overflow:visible!important;
+  }
+  .hand-tiles .tile,
+  .hand-tiles.crowded .tile,
+  .hand-tiles.very-crowded .tile{
+    width:100%;max-width:38px;height:51px;font-size:22px;
+    box-shadow:0 4px 0 #b8baa9,0 5px 6px #001a1455;
+  }
+  .hand-tiles .tile.sel,
+  .hand-tiles.crowded .tile.sel,
+  .hand-tiles.very-crowded .tile.sel{transform:translateY(-6px)}
+
+  .table-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px;margin-top:7px}
+  .table-actions>.mahjong-btn{width:100%;min-width:0;padding:9px 4px;font-size:12px;line-height:1.2;white-space:normal}
+  .score-rule,.homophone-tip{grid-column:1/-1;font-size:10px;line-height:1.35;padding:1px 4px;margin:0}
+
+  .chat-panel{order:3;width:100%;padding:8px;border-radius:0;border-left:0;border-right:0;border-bottom:0;min-height:0}
+  .chat-panel .panel-title{display:block;padding:3px 0 7px;font-size:12px}
+  .feed{height:112px;min-height:112px;padding:7px 2px;font-size:11px}
+  .feed div{padding:6px 7px;margin-bottom:5px}
+  .chat-row{gap:6px}.chat-row .mahjong-input{padding:9px 10px;font-size:12px}.chat-row .mahjong-btn{padding:8px 10px;font-size:12px}
+}
+
+@media (max-width: 390px) and (orientation: portrait){
+  .table-header{grid-template-columns:1fr auto;gap:5px}
+  .deck-chip{justify-self:end}
+  .room-chip{min-width:0}
+  .center-board{min-height:270px;padding-top:44px}
+  .discard-zone{max-height:170px}
+  .hand-tiles,.hand-tiles.crowded,.hand-tiles.very-crowded{grid-template-columns:repeat(auto-fit,minmax(28px,34px));gap:7px 3px}
+  .hand-tiles .tile,.hand-tiles.crowded .tile,.hand-tiles.very-crowded .tile{max-width:34px;height:47px;font-size:20px}
+  .table-actions>.mahjong-btn{font-size:11px;padding:8px 2px}
+  .self-seat-badge strong{font-size:11px}.self-seat-badge span{font-size:8px}
+}
+
+@media (max-height: 700px) and (max-width: 760px) and (orientation: portrait){
+  .center-board{min-height:245px;padding-top:40px}
+  .discard-zone{min-height:120px;max-height:145px}
+  .feed{height:88px;min-height:88px}
+  .hand-tiles,.hand-tiles.crowded,.hand-tiles.very-crowded{gap-top:5px}
+}
