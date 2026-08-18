@@ -280,7 +280,7 @@ io.on('connection', socket=>{
     const p=room.players[room.turn]; if(!p||p.id!==socket.id) return socket.emit('errorMsg','还没轮到你');
     if(!p.hasDrawn) return socket.emit('errorMsg','请先摸牌');
 
-    if(!Array.isArray(indices)) return socket.emit('errorMsg','请选择至少3张牌');
+    if(!Array.isArray(indices)) return socket.emit('errorMsg','请选择至少2张牌');
     const clean=[];
     const seen=new Set();
     for(const raw of indices){
@@ -290,7 +290,7 @@ io.on('connection', socket=>{
       seen.add(i);
       clean.push(i);
     }
-    if(clean.length<3) return socket.emit('errorMsg','每次出牌至少需要3个字');
+    if(clean.length<2) return socket.emit('errorMsg','每次出牌至少需要2个字');
 
     // 保留玩家点击牌面的先后顺序，用这个顺序展示出牌。
     const tiles=clean.map(i=>p.hand[i]);
@@ -321,9 +321,17 @@ io.on('connection', socket=>{
     text=String(text||'');
     if(!allowed.includes(text)) return;
     const now=Date.now();
-    if(p.lastQuickAt && now-p.lastQuickAt<700) return;
+    if(p.lastQuickAt && now-p.lastQuickAt<500) return;
     p.lastQuickAt=now;
-    io.to(room.code).emit('quickPhrase',{name:p.name,text});
+
+    // 同一句快捷互动在 3 秒内连续触发时，形成全房间连击。
+    if(room.quickCombo && room.quickCombo.text===text && now-room.quickCombo.at<=3000){
+      room.quickCombo.count+=1;
+      room.quickCombo.at=now;
+    } else {
+      room.quickCombo={text,count:1,at:now};
+    }
+    io.to(room.code).emit('quickPhrase',{name:p.name,text,combo:room.quickCombo.count});
   });
   socket.on('chat', ({text})=>{
     const room=rooms.get(socket.data.room); if(!room) return;

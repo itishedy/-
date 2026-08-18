@@ -78,7 +78,7 @@ let quickToastTimer=null;
 function showQuickPhrase(m){
   const box=$('quickToast');
   if(box){
-    box.textContent=`${m.name}：${m.text}`;
+    box.innerHTML=`<span class="quick-toast-text">${escapeHtml(m.name)}：${escapeHtml(m.text)}</span><b class="quick-combo">+${Math.max(1,Number(m.combo)||1)}</b>`;
     box.classList.remove('hidden');
     clearTimeout(quickToastTimer);
     quickToastTimer=setTimeout(()=>box.classList.add('hidden'),2200);
@@ -188,7 +188,7 @@ function render(){
   const canActAfterDraw = myTurn && !!me?.hasDrawn;
   $('draw').disabled=voting||!myTurn||!!me?.hasDrawn;
   $('skip').disabled=voting||!canActAfterDraw;
-  $('discardBtn').disabled=voting||!canActAfterDraw||selected.size<3;
+  $('discardBtn').disabled=voting||!canActAfterDraw||selected.size<2;
   refreshSelection();
 
   if(state.lastWin){
@@ -296,7 +296,7 @@ function renderTurnPrompt(me,myTurn,voting){
   if(myTurn){
     el.classList.add('my-turn');
     if(!me?.hasDrawn) el.textContent='轮到你了：请先摸牌（摸牌后开始45秒）';
-    else el.textContent=`已摸牌：请选择要打的牌（至少3字），也可以跳过不出 · ${sec ?? 45}s`;
+    else el.textContent=`已摸牌：请选择要打的牌（至少2字），也可以跳过不出 · ${sec ?? 45}s`;
     return;
   }
   const current=state.players.find(p=>p.playerKey===state.currentPlayerKey);
@@ -332,7 +332,7 @@ function refreshSelection(){
   });
   const n=ordered.length;
   const phrase=state ? ordered.map(i=>state.hand[i]).join('') : '';
-  $('discardBtn').textContent=n ? `打出「${phrase}」` : '出牌（至少3字）';
+  $('discardBtn').textContent=n ? `打出「${phrase}」` : '出牌（至少2字）';
   $('selectionHint').textContent=n ? `语序：${phrase} · ${n}张` : '按想要的语序依次点牌';
   const me=state?.players.find(p=>p.playerKey===playerKey);
   const myTurn=state?.started&&state.currentPlayerKey===playerKey;

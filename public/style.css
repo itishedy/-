@@ -241,3 +241,9 @@ button{touch-action:manipulation}
   .quick-phrase{font-size:10px;padding:7px 4px}
   .quick-toast{top:11%;font-size:13px;padding:9px 13px}
 }
+
+/* V14: 快捷互动连击 + 至少2字出牌 */
+.quick-toast{display:flex;align-items:center;justify-content:center;gap:10px}
+.quick-combo{display:inline-grid;place-items:center;min-width:38px;height:30px;padding:0 9px;border-radius:999px;background:#d9b957;color:#102d24;font-size:18px;line-height:1;box-shadow:0 0 0 2px #fff3 inset,0 3px 10px #0005;animation:comboPop .18s ease-out}
+@keyframes comboPop{from{transform:scale(.6) rotate(-8deg);opacity:.25}to{transform:scale(1) rotate(0);opacity:1}}
+@media(max-width:760px){.quick-combo{min-width:32px;height:26px;font-size:15px}.quick-toast{gap:7px}}
