@@ -9,6 +9,27 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 const rooms = new Map();
+const TURN_MS = 30000;
+
+function clearTurnTimer(room){
+  if(room.turnTimer){ clearTimeout(room.turnTimer); room.turnTimer=null; }
+}
+function armTurnTimer(room){
+  clearTurnTimer(room);
+  if(!room.started || room.pendingDiscard || !room.players.length){ room.turnDeadline=null; return; }
+  room.turnDeadline=Date.now()+TURN_MS;
+  const expectedKey=room.players[room.turn]?.playerKey;
+  room.turnTimer=setTimeout(()=>{
+    if(!room.started || room.pendingDiscard) return;
+    const p=room.players[room.turn];
+    if(!p || p.playerKey!==expectedKey) return;
+    p.hasDrawn=false;
+    addLog(room,`⏱️ ${p.name} 30秒未完成操作，自动跳过不出`);
+    advanceTurn(room,p.playerKey);
+    armTurnTimer(room);
+    broadcast(room);
+  },TURN_MS);
+}
 
 const TILE_COUNTS = {
   '我':3,'你':3,'他':2,'她':2,'的':4,'了':3,'是':2,'不':3,'在':2,'把':2,'被':2,'又':3,'还':2,'都':2,'就':1,'只':2,'才':2,'要':1,'给':2,'小':2,'大':2,'和':1,'跟':1,'敢':2,'竟':2,'真':2,'居':2,'然':2,'因':2,'为':2,'但':2,'别':1,'没':1,'吗':1,'啊':1,
@@ -33,12 +54,13 @@ function roomCode(){
 function pendingVoteView(room, socketId){
   const pd=room.pendingDiscard;
   if(!pd) return null;
-  const eligible=room.players.filter(p=>p.id!==pd.playerId).length;
+  const eligible=room.players.filter(p=>p.playerKey!==pd.playerKey && p.online).length;
   const votes=Object.values(pd.votes);
   const yes=votes.filter(Boolean).length;
   const no=votes.filter(v=>v===false).length;
   return {
-    playerId:pd.playerId,
+    playerId:room.players.find(p=>p.playerKey===pd.playerKey)?.id || null,
+    playerKey:pd.playerKey,
     playerName:pd.playerName,
     tiles:pd.tiles,
     yes,
@@ -49,14 +71,17 @@ function pendingVoteView(room, socketId){
   };
 }
 function roomView(room, socketId){
-  const me=room.players.find(p=>p.id===socketId);
+  const me=room.players.find(p=>p.id===socketId && p.online);
   return {
     code: room.code,
-    hostId: room.hostId,
+    hostId: room.players.find(p=>p.playerKey===room.hostPlayerKey && p.online)?.id || null,
+    hostPlayerKey: room.hostPlayerKey,
     started: room.started,
-    currentPlayerId: room.started ? room.players[room.turn]?.id : null,
-    players: room.players.map(p=>({id:p.id,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn,score:p.score||0,totalScore:p.totalScore||0})),
-    leaderboard: [...room.scoreboard.values()].sort((a,b)=>(b.totalScore||0)-(a.totalScore||0)).map(x=>({name:x.name,totalScore:x.totalScore||0,online:room.players.some(p=>p.playerKey===x.playerKey)})),
+    currentPlayerId: room.started ? (room.players[room.turn]?.id || null) : null,
+    currentPlayerKey: room.started ? (room.players[room.turn]?.playerKey || null) : null,
+    turnDeadline: room.turnDeadline || null,
+    players: room.players.map(p=>({id:p.id,playerKey:p.playerKey,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn,score:p.score||0,totalScore:p.totalScore||0,online:!!p.online})),
+    leaderboard: [...room.scoreboard.values()].sort((a,b)=>(b.totalScore||0)-(a.totalScore||0)).map(x=>({name:x.name,totalScore:x.totalScore||0,online:room.players.some(p=>p.playerKey===x.playerKey && p.online)})),
     hand: me ? me.hand : [],
     discardGroups: room.discardGroups,
     pendingDiscard: pendingVoteView(room,socketId),
@@ -64,7 +89,7 @@ function roomView(room, socketId){
     deckCount: room.deck.length
   };
 }
-function broadcast(room){ room.players.forEach(p=>io.to(p.id).emit('state', roomView(room,p.id))); }
+function broadcast(room){ room.players.filter(p=>p.online&&p.id).forEach(p=>io.to(p.id).emit('state', roomView(room,p.id))); }
 function addLog(room, text){ io.to(room.code).emit('log', text); }
 function startRound(room, isRestart=false){
   room.deck=buildDeck();
@@ -75,18 +100,20 @@ function startRound(room, isRestart=false){
   room.lastWin=null;
   room.players.forEach(p=>{ p.hand=[]; p.hasDrawn=false; p.score=0; });
   for(let r=0;r<13;r++) for(const p of room.players) p.hand.push(room.deck.pop());
-  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌并清零本局积分。' : '游戏开始！每人13张；每回合摸1张后可打出至少3个字。出牌过半认可后永久离手；每字1分，先打光手牌者获胜并额外+10分。');
+  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌并清零本局积分。' : '游戏开始！每人13张；每回合30秒，超时自动跳过不出。');
+  armTurnTimer(room);
   broadcast(room);
 }
-function advanceTurn(room, playerId){
-  const idx=room.players.findIndex(x=>x.id===playerId);
+function advanceTurn(room, playerKey){
+  const idx=room.players.findIndex(x=>x.playerKey===playerKey);
   room.turn=room.players.length ? (idx+1)%room.players.length : 0;
 }
+
 
 function resolvePendingDiscard(room, approved){
   const pd=room.pendingDiscard;
   if(!pd) return;
-  const p=room.players.find(x=>x.id===pd.playerId);
+  const p=room.players.find(x=>x.playerKey===pd.playerKey);
   room.pendingDiscard=null;
 
   if(!p){ broadcast(room); return; }
@@ -105,15 +132,18 @@ function resolvePendingDiscard(room, approved){
       if(scoreEntry){ scoreEntry.name=p.name; scoreEntry.totalScore=p.totalScore; }
       room.lastWin={player:p.name,score:p.score,totalScore:p.totalScore};
       room.started=false;
+      clearTurnTimer(room); room.turnDeadline=null;
       addLog(room,`🏆 ${p.name} 打光了全部手牌，本局获胜！清手奖励 +10 分，本局共 ${p.score} 分，房间累计 ${p.totalScore} 分。`);
     }else{
       addLog(room,`✅ 「${pd.tiles.join('')}」获得过半认可，${p.name} 出牌成功，+${pd.tiles.length}分，剩余${p.hand.length}张`);
-      advanceTurn(room,p.id);
+      advanceTurn(room,p.playerKey);
+      armTurnTimer(room);
     }
   }else{
     p.hand.push(...pd.tiles);
     p.hasDrawn=true;
     addLog(room,`❌ 「${pd.tiles.join('')}」未获过半认可，牌已退回 ${p.name}，请重新出牌或选择跳过`);
+    armTurnTimer(room);
   }
   broadcast(room);
 }
@@ -121,7 +151,7 @@ function resolvePendingDiscard(room, approved){
 function checkPendingVote(room){
   const pd=room.pendingDiscard;
   if(!pd) return;
-  const eligibleIds=room.players.filter(p=>p.id!==pd.playerId).map(p=>p.id);
+  const eligibleIds=room.players.filter(p=>p.playerKey!==pd.playerKey && p.online && p.id).map(p=>p.id);
   for(const id of Object.keys(pd.votes)) if(!eligibleIds.includes(id)) delete pd.votes[id];
   const eligible=eligibleIds.length;
   if(eligible===0){ resolvePendingDiscard(room,true); return; }
@@ -141,36 +171,59 @@ io.on('connection', socket=>{
     playerKey=String(playerKey||socket.id).slice(0,80);
     const code=roomCode();
     const scoreboard=new Map([[playerKey,{playerKey,name,totalScore:0}]]);
-    const room={code,hostId:socket.id,players:[{id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:0}],scoreboard,deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null};
+    const room={code,hostPlayerKey:playerKey,players:[{id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:0,online:true}],scoreboard,deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null,turnDeadline:null,turnTimer:null};
     rooms.set(code,room); socket.join(code); socket.data.room=code;
     broadcast(room);
   });
   socket.on('joinRoom', ({code,name,playerKey})=>{
     code=String(code||'').trim().toUpperCase(); name=String(name||'玩家').trim().slice(0,16)||'玩家'; playerKey=String(playerKey||socket.id).slice(0,80);
     const room=rooms.get(code); if(!room) return socket.emit('errorMsg','房间不存在');
-    if(room.started) return socket.emit('errorMsg','游戏已经开始');
+
+    // 已在房间中的玩家可在对局进行中重连：优先认浏览器 playerKey；其次允许同名的离线席位认领。
+    let existing=room.players.find(p=>p.playerKey===playerKey);
+    if(!existing) existing=room.players.find(p=>!p.online && p.name===name);
+    if(existing){
+      if(existing.online && existing.id!==socket.id) return socket.emit('errorMsg','这个玩家已经在线');
+      const oldId=existing.id;
+      const oldKey=existing.playerKey;
+      const saved=room.scoreboard.get(oldKey) || room.scoreboard.get(playerKey);
+      if(oldKey!==playerKey && saved){ room.scoreboard.delete(oldKey); saved.playerKey=playerKey; room.scoreboard.set(playerKey,saved); }
+      existing.id=socket.id; existing.online=true; existing.name=name; existing.playerKey=playerKey;
+      if(saved){ saved.name=name; existing.totalScore=saved.totalScore||existing.totalScore||0; }
+      socket.join(code); socket.data.room=code;
+      if(room.hostPlayerKey===oldKey) room.hostPlayerKey=playerKey;
+      if(room.pendingDiscard){
+        if(room.pendingDiscard.playerKey===oldKey){ room.pendingDiscard.playerKey=playerKey; room.pendingDiscard.playerId=socket.id; }
+        if(oldId && Object.prototype.hasOwnProperty.call(room.pendingDiscard.votes,oldId)){ room.pendingDiscard.votes[socket.id]=room.pendingDiscard.votes[oldId]; delete room.pendingDiscard.votes[oldId]; }
+      }
+      addLog(room,`${name} 已重新连接对局`);
+      checkPendingVote(room); broadcast(room); return;
+    }
+
+    if(room.started) return socket.emit('errorMsg','对局已开始；只有原局内玩家可以重新加入');
     if(room.players.length>=8) return socket.emit('errorMsg','房间已满（最多8人）');
     const saved=room.scoreboard.get(playerKey);
     if(saved) saved.name=name; else room.scoreboard.set(playerKey,{playerKey,name,totalScore:0});
-    room.players.push({id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:saved?.totalScore||0}); socket.join(code); socket.data.room=code;
+    room.players.push({id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:saved?.totalScore||0,online:true}); socket.join(code); socket.data.room=code;
     addLog(room, `${name} 加入了房间`); broadcast(room);
   });
   socket.on('startGame', ()=>{
     const room=rooms.get(socket.data.room); if(!room) return;
-    if(room.hostId!==socket.id) return socket.emit('errorMsg','只有房主可以开始');
+    if(room.hostPlayerKey!==room.players.find(p=>p.id===socket.id)?.playerKey) return socket.emit('errorMsg','只有房主可以开始');
     if(room.players.length<2) return socket.emit('errorMsg','至少需要2名玩家');
     startRound(room,false);
   });
   socket.on('restartGame', ()=>{
     const room=rooms.get(socket.data.room); if(!room) return;
-    if(room.hostId!==socket.id) return socket.emit('errorMsg','只有房主可以重开');
+    if(room.hostPlayerKey!==room.players.find(p=>p.id===socket.id)?.playerKey) return socket.emit('errorMsg','只有房主可以重开');
     if(room.players.length<2) return socket.emit('errorMsg','至少需要2名玩家');
     startRound(room,true);
   });
   socket.on('endGame', ()=>{
     const room=rooms.get(socket.data.room); if(!room) return;
-    if(room.hostId!==socket.id) return socket.emit('errorMsg','只有房主可以结束对局');
+    if(room.hostPlayerKey!==room.players.find(p=>p.id===socket.id)?.playerKey) return socket.emit('errorMsg','只有房主可以结束对局');
 
+    clearTurnTimer(room); room.turnDeadline=null;
     const leaderboard=[...room.scoreboard.values()]
       .sort((a,b)=>(b.totalScore||0)-(a.totalScore||0))
       .map((x,i)=>({rank:i+1,name:x.name,totalScore:x.totalScore||0}));
@@ -202,7 +255,8 @@ io.on('connection', socket=>{
     if(!p.hasDrawn) return socket.emit('errorMsg','请先摸牌再跳过');
     p.hasDrawn=false;
     addLog(room,`⏭️ ${p.name} 选择跳过，本轮不出牌`);
-    advanceTurn(room,p.id);
+    advanceTurn(room,p.playerKey);
+      armTurnTimer(room);
     broadcast(room);
   });
   socket.on('discard', ({indices})=>{
@@ -226,14 +280,15 @@ io.on('connection', socket=>{
     // 保留玩家点击牌面的先后顺序，用这个顺序展示出牌。
     const tiles=clean.map(i=>p.hand[i]);
     for(const i of [...clean].sort((a,b)=>b-a)) p.hand.splice(i,1);
-    room.pendingDiscard={playerId:p.id,playerName:p.name,tiles,votes:{}};
+    clearTurnTimer(room); room.turnDeadline=null;
+    room.pendingDiscard={playerId:p.id,playerKey:p.playerKey,playerName:p.name,tiles,votes:{}};
     addLog(room,`🗳️ ${p.name} 提交「${tiles.join('')}」，等待其他玩家认可`);
     checkPendingVote(room);
   });
   socket.on('voteDiscard', ({approve})=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started||!room.pendingDiscard) return;
     const pd=room.pendingDiscard;
-    if(socket.id===pd.playerId) return socket.emit('errorMsg','不能给自己的出牌投票');
+    if(room.players.find(p=>p.id===socket.id)?.playerKey===pd.playerKey) return socket.emit('errorMsg','不能给自己的出牌投票');
     if(!room.players.some(p=>p.id===socket.id)) return;
     if(Object.prototype.hasOwnProperty.call(pd.votes,socket.id)) return socket.emit('errorMsg','你已经投过票了');
     pd.votes[socket.id]=approve===true;
@@ -251,22 +306,21 @@ io.on('connection', socket=>{
   });
   socket.on('disconnect', ()=>{
     const code=socket.data.room, room=rooms.get(code); if(!room) return;
-    const idx=room.players.findIndex(p=>p.id===socket.id); if(idx<0) return;
-    const [left]=room.players.splice(idx,1);
-    if(!room.players.length){ rooms.delete(code); return; }
-    if(room.hostId===socket.id) room.hostId=room.players[0].id;
-
-    if(room.pendingDiscard?.playerId===socket.id){
-      room.pendingDiscard=null;
-      if(room.turn>=room.players.length) room.turn=0;
-    }else if(room.pendingDiscard){
+    const p=room.players.find(x=>x.id===socket.id); if(!p) return;
+    p.online=false; p.id=null;
+    if(room.pendingDiscard){
+      delete room.pendingDiscard.votes[socket.id];
       checkPendingVote(room);
-    }else{
-      if(idx<room.turn) room.turn--;
-      if(room.turn>=room.players.length) room.turn=0;
     }
-    addLog(room,`${left.name} 离开了房间`); broadcast(room);
+    // 对局进行中保留席位、手牌和积分，允许玩家之后凭房间号重新进入。
+    // 未开局房间如果所有人都离线，则直接销毁，避免空房间常驻。
+    if(!room.started && !room.players.some(x=>x.online)){
+      clearTurnTimer(room); rooms.delete(code); return;
+    }
+    addLog(room,`${p.name} 暂时离线，可用原昵称和房间号重新加入`);
+    broadcast(room);
   });
+
 });
 
 const PORT=process.env.PORT||3000;

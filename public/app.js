@@ -3,14 +3,23 @@ const playerKey = localStorage.getItem('bssm-player-key') || (()=>{ const v=(cry
 let state = null;
 let selected = new Set();
 const $ = id => document.getElementById(id);
+let endReturnTimer=null;
+const savedName=localStorage.getItem('bssm-player-name')||'';
+const savedRoom=localStorage.getItem('bssm-last-room')||'';
+window.addEventListener('DOMContentLoaded',()=>{ if($('name')) $('name').value=savedName; if($('code')) $('code').value=savedRoom; });
+
+// Socket.IO 网络恢复后，如果页面仍在局内，自动认领自己的原席位。
+socket.on('connect',()=>{
+  if(state?.code){ socket.emit('joinRoom',{code:state.code,name:localStorage.getItem('bssm-player-name')||$('name')?.value||'玩家',playerKey}); }
+});
 
 function err(t){
   $('err').textContent = t;
   setTimeout(() => { if ($('err').textContent === t) $('err').textContent = ''; }, 2600);
 }
 
-$('create').onclick = () => socket.emit('createRoom', {name:$('name').value,playerKey});
-$('join').onclick = () => socket.emit('joinRoom', {code:$('code').value, name:$('name').value,playerKey});
+$('create').onclick = () => { localStorage.setItem('bssm-player-name',$('name').value.trim()); socket.emit('createRoom', {name:$('name').value,playerKey}); };
+$('join').onclick = () => { localStorage.setItem('bssm-player-name',$('name').value.trim()); localStorage.setItem('bssm-last-room',$('code').value.trim().toUpperCase()); socket.emit('joinRoom', {code:$('code').value, name:$('name').value,playerKey}); };
 $('code').oninput = e => e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);
 $('code').onkeydown = e => { if(e.key === 'Enter') $('join').click(); };
 $('name').onkeydown = e => { if(e.key === 'Enter') $('create').click(); };
@@ -64,19 +73,43 @@ function feed(type,name,text){
 }
 
 socket.on('roomEnded', result => {
-  const lines=(result?.leaderboard||[]).map(x=>`${x.rank}. ${x.name}  ${x.totalScore}分`);
-  alert(`对局已结束 · 房间已关闭\n\n${lines.length?lines.join('\n'):'暂无积分'}\n\n房主：${result?.endedBy||'房主'}`);
-  state=null;
-  selected=new Set();
-  $('game').classList.add('hidden');
-  $('lobby').classList.remove('hidden');
-  $('feed').innerHTML='';
-  $('winner').textContent='';
-  $('code').value='';
+  showFinalLeaderboard(result);
 });
+
+function showFinalLeaderboard(result){
+  const box=$('finalLeaderboard');
+  box.innerHTML='';
+  (result?.leaderboard||[]).forEach(x=>{
+    const row=document.createElement('div');
+    row.className='final-rank-row';
+    row.innerHTML=`<span>${x.rank}</span><strong>${escapeHtml(x.name)}</strong><b>${x.totalScore}分</b>`;
+    box.appendChild(row);
+  });
+  $('finalEndedBy').textContent=`房主 ${result?.endedBy||'房主'} 已结束对局`;
+  $('finalOverlay').classList.remove('hidden');
+  let left=5;
+  const update=()=>{ $('finalReturn').textContent=`返回大厅（${left}）`; };
+  update();
+  clearInterval(endReturnTimer);
+  endReturnTimer=setInterval(()=>{ left--; update(); if(left<=0) returnToLobby(); },1000);
+}
+
+function returnToLobby(){
+  clearInterval(endReturnTimer); endReturnTimer=null;
+  state=null; selected=new Set();
+  localStorage.removeItem('bssm-last-room');
+  $('finalOverlay').classList.add('hidden');
+  $('game').classList.add('hidden'); $('lobby').classList.remove('hidden');
+  $('feed').innerHTML=''; $('winner').textContent=''; $('code').value='';
+}
+
+$('finalReturn').onclick=returnToLobby;
+
 
 socket.on('state', s => {
   state=s;
+  localStorage.setItem('bssm-last-room',s.code||'');
+  const mine=s.players?.find(p=>p.playerKey===playerKey); if(mine) localStorage.setItem('bssm-player-name',mine.name);
   selected=new Set();
   render();
 });
@@ -92,14 +125,14 @@ function render(){
   renderSeats();
 
   const myId=socket.id;
-  const me=state.players.find(p=>p.id===myId);
-  const myTurn=state.started&&state.currentPlayerId===myId;
+  const me=state.players.find(p=>p.playerKey===playerKey);
+  const myTurn=state.started&&state.currentPlayerKey===playerKey;
   const voting=!!state.pendingDiscard;
 
-  $('start').classList.toggle('hidden',state.started||state.hostId!==myId);
+  $('start').classList.toggle('hidden',state.started||state.hostPlayerKey!==playerKey);
   $('start').disabled=state.players.length<2;
-  $('restart').classList.toggle('hidden',state.hostId!==myId || state.players.length<2);
-  $('endGame').classList.toggle('hidden',state.hostId!==myId);
+  $('restart').classList.toggle('hidden',state.hostPlayerKey!==playerKey || state.players.length<2);
+  $('endGame').classList.toggle('hidden',state.hostPlayerKey!==playerKey);
 
   $('discard').innerHTML='';
   (state.discardGroups||[]).forEach(group=>{
@@ -147,10 +180,11 @@ function renderPlayers(){
   $('players').innerHTML='';
   state.players.forEach(p=>{
     const d=document.createElement('div');
-    d.className='player'+(p.id===state.currentPlayerId?' turn':'');
+    d.className='player'+(p.playerKey===state.currentPlayerKey?' turn':'')+(p.online?'':' offline');
     const tags=[];
-    if(p.id===state.hostId) tags.push('房主');
-    if(p.id===state.currentPlayerId) tags.push('当前');
+    if(p.playerKey===state.hostPlayerKey) tags.push('房主');
+    if(p.playerKey===state.currentPlayerKey) tags.push('当前');
+    if(!p.online) tags.push('离线');
     d.textContent=`${p.name} · ${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${tags.length?' · '+tags.join(' / '):''}`;
     $('players').appendChild(d);
   });
@@ -181,7 +215,7 @@ function renderSeats(){
   const board=$('tableSeats');
   board.innerHTML='';
   if(!state.players.length) return;
-  const myIndex=Math.max(0,state.players.findIndex(p=>p.id===socket.id));
+  const myIndex=Math.max(0,state.players.findIndex(p=>p.playerKey===playerKey));
   const ordered=[];
   for(let i=0;i<state.players.length;i++) ordered.push(state.players[(myIndex+i)%state.players.length]);
 
@@ -192,21 +226,22 @@ function renderSeats(){
 
   ordered.forEach((p,i)=>{
     const badges=[];
-    if(p.id===state.hostId) badges.push('房主');
-    if(p.id===state.currentPlayerId) badges.push('出牌');
+    if(p.playerKey===state.hostPlayerKey) badges.push('房主');
+    if(p.playerKey===state.currentPlayerKey) badges.push('出牌');
+    if(!p.online) badges.push('离线');
     const meta=`${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${badges.length?' · '+badges.join(' / '):''}`;
 
     // 自己的名牌单独放到手牌区上方，彻底脱离牌桌浮层，避免遮挡手牌。
-    if(p.id===socket.id){
+    if(p.playerKey===playerKey){
       if(selfBox){
-        selfBox.className='self-seat-badge'+(p.id===state.currentPlayerId?' active':'');
+        selfBox.className='self-seat-badge'+(p.playerKey===state.currentPlayerKey?' active':'');
         selfBox.innerHTML=`<strong>${escapeHtml(p.name)}</strong><span>${meta}</span>`;
       }
       return;
     }
 
     const seat=document.createElement('div');
-    seat.className='table-seat'+(p.id===state.currentPlayerId?' active':'');
+    seat.className='table-seat'+(p.playerKey===state.currentPlayerKey?' active':'')+(p.online?'':' offline');
     const angle=Math.PI/2 + (i/n)*Math.PI*2;
     const x=50 + Math.cos(angle)*43;
     const y=50 + Math.sin(angle)*40;
@@ -229,19 +264,20 @@ function renderTurnPrompt(me,myTurn,voting){
     return;
   }
   if(voting){
-    if(state.pendingDiscard.playerId===socket.id) el.textContent='已出牌，请等待其他玩家投票';
+    if(state.pendingDiscard.playerKey===playerKey) el.textContent='已出牌，请等待其他玩家投票';
     else el.textContent=`请判断「${state.pendingDiscard.tiles.join('')}」是否认可`;
     el.classList.add('attention');
     return;
   }
+  const sec=Math.max(0,Math.ceil(((state.turnDeadline||Date.now())-Date.now())/1000));
   if(myTurn){
     el.classList.add('my-turn');
-    if(!me?.hasDrawn) el.textContent='轮到你了：请先摸牌';
-    else el.textContent='已摸牌：请选择要打的牌（至少3字），也可以跳过不出';
+    if(!me?.hasDrawn) el.textContent=`轮到你了：请先摸牌 · ${sec}s`;
+    else el.textContent=`已摸牌：请选择要打的牌（至少3字），也可以跳过不出 · ${sec}s`;
     return;
   }
-  const current=state.players.find(p=>p.id===state.currentPlayerId);
-  el.textContent=current?`等待 ${current.name} 操作…`:'等待下一位玩家…';
+  const current=state.players.find(p=>p.playerKey===state.currentPlayerKey);
+  el.textContent=current?`等待 ${current.name} 操作… ${sec}s`:'等待下一位玩家…';
 }
 
 function renderVote(){
@@ -252,7 +288,7 @@ function renderVote(){
   $('voteTiles').innerHTML='';
   pd.tiles.forEach(ch=>$('voteTiles').appendChild(tile(ch,false)));
   $('voteCount').textContent=`认可 ${pd.yes} · 不认可 ${pd.no} · 通过需要 ${pd.needed}/${pd.eligible}`;
-  const isOwner=pd.playerId===socket.id;
+  const isOwner=pd.playerKey===playerKey;
   const voted=pd.myVote!==null;
   $('voteYes').classList.toggle('hidden',isOwner);
   $('voteNo').classList.toggle('hidden',isOwner);
@@ -274,8 +310,8 @@ function refreshSelection(){
   const phrase=state ? ordered.map(i=>state.hand[i]).join('') : '';
   $('discardBtn').textContent=n ? `打出「${phrase}」` : '出牌（至少3字）';
   $('selectionHint').textContent=n ? `语序：${phrase} · ${n}张` : '按想要的语序依次点牌';
-  const me=state?.players.find(p=>p.id===socket.id);
-  const myTurn=state?.started&&state.currentPlayerId===socket.id;
+  const me=state?.players.find(p=>p.playerKey===playerKey);
+  const myTurn=state?.started&&state.currentPlayerKey===playerKey;
   const canAct=myTurn&&!!me?.hasDrawn;
   $('discardBtn').disabled=!!state?.pendingDiscard||!canAct||n<3;
 }
@@ -289,3 +325,9 @@ function tile(ch){
 function escapeHtml(text){
   return String(text).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
+
+setInterval(()=>{
+  if(!state?.started || state.pendingDiscard) return;
+  const me=state.players.find(p=>p.playerKey===playerKey);
+  renderTurnPrompt(me,state.currentPlayerKey===playerKey,false);
+},250);
