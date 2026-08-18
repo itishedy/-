@@ -187,18 +187,32 @@ function renderSeats(){
 
   // 从自己的正下方开始，按顺时针均匀排在桌边。
   const n=ordered.length;
+  const selfBox=$('selfSeat');
+  if(selfBox) selfBox.innerHTML='';
+
   ordered.forEach((p,i)=>{
-    const seat=document.createElement('div');
-    seat.className='table-seat'+(p.id===socket.id?' me':'')+(p.id===state.currentPlayerId?' active':'');
-    const angle=Math.PI/2 + (i/n)*Math.PI*2;
-    const x=50 + Math.cos(angle)*43;
-    const y=i===0 ? 76 : 50 + Math.sin(angle)*40;
-    seat.style.left=`${x}%`;
-    seat.style.top=`${y}%`;
     const badges=[];
     if(p.id===state.hostId) badges.push('房主');
     if(p.id===state.currentPlayerId) badges.push('出牌');
-    seat.innerHTML=`<strong>${escapeHtml(p.name)}</strong><span>${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${badges.length?' · '+badges.join(' / '):''}</span>`;
+    const meta=`${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${badges.length?' · '+badges.join(' / '):''}`;
+
+    // 自己的名牌单独放到手牌区上方，彻底脱离牌桌浮层，避免遮挡手牌。
+    if(p.id===socket.id){
+      if(selfBox){
+        selfBox.className='self-seat-badge'+(p.id===state.currentPlayerId?' active':'');
+        selfBox.innerHTML=`<strong>${escapeHtml(p.name)}</strong><span>${meta}</span>`;
+      }
+      return;
+    }
+
+    const seat=document.createElement('div');
+    seat.className='table-seat'+(p.id===state.currentPlayerId?' active':'');
+    const angle=Math.PI/2 + (i/n)*Math.PI*2;
+    const x=50 + Math.cos(angle)*43;
+    const y=50 + Math.sin(angle)*40;
+    seat.style.left=`${x}%`;
+    seat.style.top=`${y}%`;
+    seat.innerHTML=`<strong>${escapeHtml(p.name)}</strong><span>${meta}</span>`;
     board.appendChild(seat);
   });
 }
