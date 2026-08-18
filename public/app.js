@@ -38,6 +38,7 @@ $('discardBtn').onclick = () => {
 };
 $('voteYes').onclick = () => socket.emit('voteDiscard',{approve:true});
 $('voteNo').onclick = () => socket.emit('voteDiscard',{approve:false});
+document.querySelectorAll('.quick-phrase').forEach(btn=>{ btn.onclick=()=>socket.emit('quickPhrase',{text:btn.dataset.phrase}); });
 $('send').onclick = sendChat;
 $('chat').onkeydown = e => { if(e.key === 'Enter') sendChat(); };
 
@@ -58,6 +59,7 @@ $('copy').onclick = async () => {
 socket.on('errorMsg', err);
 socket.on('log', t => feed('system','系统', t));
 socket.on('chatMsg', m => feed('user',m.name, m.text));
+socket.on('quickPhrase', m => { feed('quick',m.name,m.text); showQuickPhrase(m); });
 function feed(type,name,text){
   const d=document.createElement('div');
   d.className=`feed-item ${type}`;
@@ -70,6 +72,26 @@ function feed(type,name,text){
   d.append(who,body);
   $('feed').appendChild(d);
   $('feed').scrollTop=$('feed').scrollHeight;
+}
+
+let quickToastTimer=null;
+function showQuickPhrase(m){
+  const box=$('quickToast');
+  if(box){
+    box.textContent=`${m.name}：${m.text}`;
+    box.classList.remove('hidden');
+    clearTimeout(quickToastTimer);
+    quickToastTimer=setTimeout(()=>box.classList.add('hidden'),2200);
+  }
+  // 用系统语音尽量还原斗地主式快捷语音；若浏览器限制自动语音，视觉提示仍正常显示。
+  try{
+    if('speechSynthesis' in window){
+      const u=new SpeechSynthesisUtterance(m.text);
+      u.lang='zh-CN'; u.rate=1.05; u.pitch=1;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+  }catch(_){ }
 }
 
 socket.on('roomEnded', result => {
@@ -170,7 +192,7 @@ function render(){
   refreshSelection();
 
   if(state.lastWin){
-    $('winner').textContent=`本局赢家｜${state.lastWin.player} · 本局${state.lastWin.score}分 · 累计${state.lastWin.totalScore||0}分`;
+    $('winner').textContent=`获胜｜${state.lastWin.player} · ${state.lastWin.reason||'本局胜利'} · 本局${state.lastWin.score}分 · 累计${state.lastWin.totalScore||0}分`;
   } else {
     $('winner').textContent='';
   }
@@ -269,15 +291,17 @@ function renderTurnPrompt(me,myTurn,voting){
     el.classList.add('attention');
     return;
   }
-  const sec=Math.max(0,Math.ceil(((state.turnDeadline||Date.now())-Date.now())/1000));
+  const hasTimer=!!state.turnDeadline;
+  const sec=hasTimer?Math.max(0,Math.ceil((state.turnDeadline-Date.now())/1000)):null;
   if(myTurn){
     el.classList.add('my-turn');
-    if(!me?.hasDrawn) el.textContent=`轮到你了：请先摸牌 · ${sec}s`;
-    else el.textContent=`已摸牌：请选择要打的牌（至少3字），也可以跳过不出 · ${sec}s`;
+    if(!me?.hasDrawn) el.textContent='轮到你了：请先摸牌（摸牌后开始45秒）';
+    else el.textContent=`已摸牌：请选择要打的牌（至少3字），也可以跳过不出 · ${sec ?? 45}s`;
     return;
   }
   const current=state.players.find(p=>p.playerKey===state.currentPlayerKey);
-  el.textContent=current?`等待 ${current.name} 操作… ${sec}s`:'等待下一位玩家…';
+  const suffix=hasTimer?` · ${sec}s`:' · 等待摸牌';
+  el.textContent=current?`等待 ${current.name} 操作${suffix}`:'等待下一位玩家…';
 }
 
 function renderVote(){

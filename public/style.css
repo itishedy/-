@@ -218,3 +218,26 @@ button{touch-action:manipulation}
 .final-rank-row span{font-weight:900;color:#806421}.final-rank-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.final-rank-row b{color:#7d2f2b}
 .final-return{width:100%}
 @media(max-width:760px){.final-card{padding:18px 14px}.final-title{font-size:23px}.final-rank-row{padding:9px 10px}}
+
+
+/* V13: 45s after-draw timer, quick voice phrases, lobby rules */
+.lobby-rules{margin-top:16px;padding:12px 14px;border:1px solid #8f8d7c55;border-radius:10px;background:#ece5cf;color:#3b403a;font-size:12px;line-height:1.55}
+.lobby-rules strong{display:block;margin-bottom:5px;color:#214c40;font-size:13px;letter-spacing:.08em}
+.lobby-rules p{margin:4px 0}
+.waiting-rules{margin-top:9px;padding:8px 9px;border-radius:7px;background:#ffffff07;color:#d9cda8;font-size:11px;line-height:1.45}
+.quick-phrases{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:9px 0 5px}
+.quick-phrase{min-width:0;padding:7px 6px;border:1px solid #9d855055;border-radius:7px;background:#20372e;color:#f0dfb7;font-size:11px;cursor:pointer;white-space:normal;line-height:1.25;box-shadow:0 2px 0 #071b15}
+.quick-phrase:hover{background:#29483b;border-color:#c9ad6d77}
+.quick-phrase:active{transform:translateY(1px)}
+.quick-toast{position:fixed;z-index:120;left:50%;top:16%;transform:translateX(-50%);max-width:min(560px,88vw);padding:11px 18px;border:2px solid #e1c36d;border-radius:999px;background:#102d24f2;color:#fff0bb;font-weight:900;font-size:16px;text-align:center;box-shadow:0 12px 35px #0008;pointer-events:none;animation:quickPop .18s ease-out}
+@keyframes quickPop{from{transform:translateX(-50%) scale(.88);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
+.feed-item.quick{border-left-color:#d4aa4f;background:#d4aa4f14;color:#ffe8a3}
+@media(max-width:760px){
+  .lobby-screen{padding:18px 12px;align-items:start;padding-top:90px}
+  .lobby-panel{width:min(440px,calc(100vw - 26px));padding:20px 16px}
+  .lobby-rules{font-size:11px;padding:10px 11px}
+  .waiting-rules{font-size:10px}
+  .quick-phrases{grid-template-columns:1fr 1fr;margin:6px 0}
+  .quick-phrase{font-size:10px;padding:7px 4px}
+  .quick-toast{top:11%;font-size:13px;padding:9px 13px}
+}

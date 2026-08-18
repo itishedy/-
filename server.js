@@ -9,24 +9,27 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 const rooms = new Map();
-const TURN_MS = 30000;
+const TURN_MS = 45000;
+const WIN_SCORE = 30;
 
 function clearTurnTimer(room){
   if(room.turnTimer){ clearTimeout(room.turnTimer); room.turnTimer=null; }
 }
 function armTurnTimer(room){
   clearTurnTimer(room);
-  if(!room.started || room.pendingDiscard || !room.players.length){ room.turnDeadline=null; return; }
+  const current=room.started ? room.players[room.turn] : null;
+  // 倒计时只在当前玩家已经摸牌后开始；摸牌前无限等待。
+  if(!room.started || room.pendingDiscard || !current || !current.hasDrawn){ room.turnDeadline=null; return; }
   room.turnDeadline=Date.now()+TURN_MS;
-  const expectedKey=room.players[room.turn]?.playerKey;
+  const expectedKey=current.playerKey;
   room.turnTimer=setTimeout(()=>{
     if(!room.started || room.pendingDiscard) return;
     const p=room.players[room.turn];
-    if(!p || p.playerKey!==expectedKey) return;
+    if(!p || p.playerKey!==expectedKey || !p.hasDrawn) return;
     p.hasDrawn=false;
-    addLog(room,`⏱️ ${p.name} 30秒未完成操作，自动跳过不出`);
+    room.turnDeadline=null;
+    addLog(room,`⏱️ ${p.name} 摸牌后45秒未完成出牌，自动跳过不出`);
     advanceTurn(room,p.playerKey);
-    armTurnTimer(room);
     broadcast(room);
   },TURN_MS);
 }
@@ -100,8 +103,8 @@ function startRound(room, isRestart=false){
   room.lastWin=null;
   room.players.forEach(p=>{ p.hand=[]; p.hasDrawn=false; p.score=0; });
   for(let r=0;r<13;r++) for(const p of room.players) p.hand.push(room.deck.pop());
-  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌并清零本局积分。' : '游戏开始！每人13张；每回合30秒，超时自动跳过不出。');
-  armTurnTimer(room);
+  addLog(room, isRestart ? '🔄 房主已重开本局，重新发牌并清零本局积分；累计积分保留。' : '游戏开始！每人13张；轮到自己先摸牌，摸牌后开始45秒倒计时。累计达到30分判定获胜。');
+  clearTurnTimer(room); room.turnDeadline=null;
   broadcast(room);
 }
 function advanceTurn(room, playerKey){
@@ -109,6 +112,15 @@ function advanceTurn(room, playerKey){
   room.turn=room.players.length ? (idx+1)%room.players.length : 0;
 }
 
+
+function scoreVictory(room,p){
+  if((p.totalScore||0) < WIN_SCORE) return false;
+  room.lastWin={player:p.name,score:p.score,totalScore:p.totalScore,reason:'累计达到30分'};
+  room.started=false;
+  clearTurnTimer(room); room.turnDeadline=null;
+  addLog(room,`🏆 ${p.name} 累计达到 ${p.totalScore} 分，率先达到30分，获得本场胜利！`);
+  return true;
+}
 
 function resolvePendingDiscard(room, approved){
   const pd=room.pendingDiscard;
@@ -128,21 +140,24 @@ function resolvePendingDiscard(room, approved){
     if(p.hand.length===0){
       p.score+=10;
       p.totalScore=(p.totalScore||0)+10;
-      const scoreEntry=room.scoreboard.get(p.playerKey);
-      if(scoreEntry){ scoreEntry.name=p.name; scoreEntry.totalScore=p.totalScore; }
-      room.lastWin={player:p.name,score:p.score,totalScore:p.totalScore};
-      room.started=false;
-      clearTurnTimer(room); room.turnDeadline=null;
-      addLog(room,`🏆 ${p.name} 打光了全部手牌，本局获胜！清手奖励 +10 分，本局共 ${p.score} 分，房间累计 ${p.totalScore} 分。`);
-    }else{
-      addLog(room,`✅ 「${pd.tiles.join('')}」获得过半认可，${p.name} 出牌成功，+${pd.tiles.length}分，剩余${p.hand.length}张`);
+      const scoreEntry2=room.scoreboard.get(p.playerKey);
+      if(scoreEntry2){ scoreEntry2.name=p.name; scoreEntry2.totalScore=p.totalScore; }
+      // 先检查30分总胜利；未到30分则按原规则结束本小局。
+      if(!scoreVictory(room,p)){
+        room.lastWin={player:p.name,score:p.score,totalScore:p.totalScore,reason:'打光手牌'};
+        room.started=false;
+        clearTurnTimer(room); room.turnDeadline=null;
+        addLog(room,`🏆 ${p.name} 打光了全部手牌，本局获胜！清手奖励 +10 分，本局共 ${p.score} 分，房间累计 ${p.totalScore} 分。`);
+      }
+    }else if(!scoreVictory(room,p)){
+      addLog(room,`✅ 「${pd.tiles.join('')}」获得过半认可，${p.name} 出牌成功，+${pd.tiles.length}分，累计${p.totalScore}分，剩余${p.hand.length}张`);
       advanceTurn(room,p.playerKey);
-      armTurnTimer(room);
+      clearTurnTimer(room); room.turnDeadline=null;
     }
   }else{
     p.hand.push(...pd.tiles);
     p.hasDrawn=true;
-    addLog(room,`❌ 「${pd.tiles.join('')}」未获过半认可，牌已退回 ${p.name}，请重新出牌或选择跳过`);
+    addLog(room,`❌ 「${pd.tiles.join('')}」未获过半认可，牌已退回 ${p.name}，请重新出牌或选择跳过（重新计45秒）`);
     armTurnTimer(room);
   }
   broadcast(room);
@@ -245,8 +260,8 @@ io.on('connection', socket=>{
     if(room.pendingDiscard) return socket.emit('errorMsg','正在等待大家投票');
     const p=room.players[room.turn]; if(!p||p.id!==socket.id) return socket.emit('errorMsg','还没轮到你');
     if(p.hasDrawn) return socket.emit('errorMsg','本回合已经摸过牌了，请出牌或跳过');
-    if(!room.deck.length){ p.hasDrawn=true; addLog(room,`牌堆已空，${p.name} 本轮无需摸牌`); return broadcast(room); }
-    p.hand.push(room.deck.pop()); p.hasDrawn=true; addLog(room,`${p.name} 摸了一张牌`); broadcast(room);
+    if(!room.deck.length){ p.hasDrawn=true; addLog(room,`牌堆已空，${p.name} 本轮无需摸牌，45秒倒计时开始`); armTurnTimer(room); return broadcast(room); }
+    p.hand.push(room.deck.pop()); p.hasDrawn=true; addLog(room,`${p.name} 摸了一张牌，45秒倒计时开始`); armTurnTimer(room); broadcast(room);
   });
   socket.on('skipTurn', ()=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started) return;
@@ -256,7 +271,7 @@ io.on('connection', socket=>{
     p.hasDrawn=false;
     addLog(room,`⏭️ ${p.name} 选择跳过，本轮不出牌`);
     advanceTurn(room,p.playerKey);
-      armTurnTimer(room);
+    clearTurnTimer(room); room.turnDeadline=null;
     broadcast(room);
   });
   socket.on('discard', ({indices})=>{
@@ -298,6 +313,17 @@ io.on('connection', socket=>{
   });
   socket.on('declareWin', ()=>{
     socket.emit('errorMsg','新版规则无需手动胡牌：最先打光手牌的人自动获胜');
+  });
+  socket.on('quickPhrase', ({text})=>{
+    const room=rooms.get(socket.data.room); if(!room) return;
+    const p=room.players.find(x=>x.id===socket.id && x.online); if(!p) return;
+    const allowed=['我等的花儿都谢了','请喝卡布奇诺','牛逼','垃圾'];
+    text=String(text||'');
+    if(!allowed.includes(text)) return;
+    const now=Date.now();
+    if(p.lastQuickAt && now-p.lastQuickAt<700) return;
+    p.lastQuickAt=now;
+    io.to(room.code).emit('quickPhrase',{name:p.name,text});
   });
   socket.on('chat', ({text})=>{
     const room=rooms.get(socket.data.room); if(!room) return;
