@@ -25,6 +25,7 @@ $('join').onclick = () => { localStorage.setItem('bssm-player-name',$('name').va
 $('code').oninput = e => e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,5);
 $('code').onkeydown = e => { if(e.key === 'Enter') $('join').click(); };
 $('name').onkeydown = e => { if(e.key === 'Enter') $('create').click(); };
+$('ready').onclick = () => socket.emit('toggleReady');
 $('start').onclick = () => socket.emit('startGame');
 $('restart').onclick = () => {
   if(confirm('确定要重开本局吗？所有玩家都会留在房间，重新抓牌，并把本房间累计积分全部清零从0开始。')) socket.emit('restartGame');
@@ -96,6 +97,11 @@ function showQuickPhrase(m){
   }catch(_){ }
 }
 
+socket.on('kicked', info => {
+  alert(info?.reason || '你已被移出房间');
+  returnToLobby();
+});
+
 socket.on('roomEnded', result => {
   showFinalLeaderboard(result);
 });
@@ -153,8 +159,15 @@ function render(){
   const myTurn=state.started&&state.currentPlayerKey===playerKey;
   const voting=!!state.pendingDiscard;
 
+  const isHost=state.hostPlayerKey===playerKey;
+  $('ready').classList.toggle('hidden',state.started||isHost);
+  $('ready').textContent=me?.ready?'取消准备':'准备';
+  $('ready').classList.toggle('is-ready',!!me?.ready);
+  const guests=state.players.filter(p=>p.playerKey!==state.hostPlayerKey);
+  const everyoneReady=state.players.length>=2 && guests.every(p=>p.online&&p.ready);
   $('start').classList.toggle('hidden',state.started||state.hostPlayerKey!==playerKey);
-  $('start').disabled=state.players.length<2;
+  $('start').disabled=!everyoneReady;
+  $('start').textContent=everyoneReady?'开局':'等待全部准备';
   $('restart').classList.toggle('hidden',state.hostPlayerKey!==playerKey || state.players.length<2);
   $('endGame').classList.toggle('hidden',state.hostPlayerKey!==playerKey);
 
@@ -204,12 +217,27 @@ function renderPlayers(){
   $('players').innerHTML='';
   state.players.forEach(p=>{
     const d=document.createElement('div');
-    d.className='player'+(p.playerKey===state.currentPlayerKey?' turn':'')+(p.online?'':' offline');
+    d.className='player'+(p.playerKey===state.currentPlayerKey?' turn':'')+(p.online?'':' offline')+(p.ready?' ready':'');
+    const info=document.createElement('div');
+    info.className='player-info';
     const tags=[];
     if(p.playerKey===state.hostPlayerKey) tags.push('房主');
+    if(!state.started){
+      if(p.playerKey===state.hostPlayerKey) tags.push('无需准备');
+      else tags.push(p.ready?'已准备':'未准备');
+    }
     if(p.playerKey===state.currentPlayerKey) tags.push('当前');
     if(!p.online) tags.push('离线');
-    d.textContent=`${p.name} · ${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${tags.length?' · '+tags.join(' / '):''}`;
+    info.textContent=`${p.name} · ${p.handCount}张 · 本局${p.score||0} · 累计${p.totalScore||0}${tags.length?' · '+tags.join(' / '):''}`;
+    d.appendChild(info);
+    const canKick=!state.started && state.hostPlayerKey===playerKey && p.playerKey!==playerKey && (!p.online || !p.ready);
+    if(canKick){
+      const kick=document.createElement('button');
+      kick.className='kick-btn';
+      kick.textContent='移出';
+      kick.onclick=e=>{ e.stopPropagation(); if(confirm(`确定移出 ${p.name} 吗？`)) socket.emit('kickPlayer',{playerKey:p.playerKey}); };
+      d.appendChild(kick);
+    }
     $('players').appendChild(d);
   });
 }
@@ -284,7 +312,11 @@ function renderTurnPrompt(me,myTurn,voting){
     return;
   }
   if(!state.started){
-    el.textContent=state.hostId===socket.id?'等待牌友到齐，可以开局':'等待房主开局';
+    const guests=state.players.filter(p=>p.playerKey!==state.hostPlayerKey);
+    const readyCount=guests.filter(p=>p.online&&p.ready).length;
+    if(state.hostPlayerKey===playerKey) el.textContent=`房主无需准备 · ${readyCount}/${guests.length} 名玩家已准备`;
+    else if(me?.ready) el.textContent=`已准备 · ${readyCount}/${guests.length}，等待其他玩家`;
+    else el.textContent=`请先准备 · ${readyCount}/${guests.length} 已准备`;
     return;
   }
   if(voting){

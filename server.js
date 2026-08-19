@@ -105,7 +105,7 @@ function roomView(room, socketId){
     turnDeadline: room.turnDeadline || null,
     turnPhase: room.turnPhase || null,
     turnSeq: room.turnSeq || 0,
-    players: room.players.map(p=>({id:p.id,playerKey:p.playerKey,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn,score:p.score||0,totalScore:p.totalScore||0,online:!!p.online})),
+    players: room.players.map(p=>({id:p.id,playerKey:p.playerKey,name:p.name,handCount:p.hand.length,hasDrawn:p.hasDrawn,score:p.score||0,totalScore:p.totalScore||0,online:!!p.online,ready:!!p.ready})),
     leaderboard: [...room.scoreboard.values()].sort((a,b)=>(b.totalScore||0)-(a.totalScore||0)).map(x=>({name:x.name,totalScore:x.totalScore||0,online:room.players.some(p=>p.playerKey===x.playerKey && p.online)})),
     hand: me ? me.hand : [],
     discardGroups: room.discardGroups,
@@ -129,6 +129,7 @@ function startRound(room, isRestart=false){
     p.hand=[];
     p.hasDrawn=false;
     p.score=0;
+    p.ready=false;
     if(isRestart) p.totalScore=0;
   });
   if(isRestart){
@@ -221,7 +222,7 @@ io.on('connection', socket=>{
     playerKey=String(playerKey||socket.id).slice(0,80);
     const code=roomCode();
     const scoreboard=new Map([[playerKey,{playerKey,name,totalScore:0}]]);
-    const room={code,hostPlayerKey:playerKey,players:[{id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:0,online:true}],scoreboard,deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null,turnDeadline:null,turnPhase:null,turnTimer:null,turnSeq:0};
+    const room={code,hostPlayerKey:playerKey,players:[{id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:0,online:true,ready:false}],scoreboard,deck:[],discardGroups:[],pendingDiscard:null,turn:0,started:false,lastWin:null,turnDeadline:null,turnPhase:null,turnTimer:null,turnSeq:0};
     rooms.set(code,room); socket.join(code); socket.data.room=code;
     broadcast(room);
   });
@@ -254,13 +255,45 @@ io.on('connection', socket=>{
     if(room.players.length>=8) return socket.emit('errorMsg','房间已满（最多8人）');
     const saved=room.scoreboard.get(playerKey);
     if(saved) saved.name=name; else room.scoreboard.set(playerKey,{playerKey,name,totalScore:0});
-    room.players.push({id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:saved?.totalScore||0,online:true}); socket.join(code); socket.data.room=code;
+    room.players.push({id:socket.id,playerKey,name,hand:[],hasDrawn:false,score:0,totalScore:saved?.totalScore||0,online:true,ready:false}); socket.join(code); socket.data.room=code;
     addLog(room, `${name} 加入了房间`); broadcast(room);
+  });
+  socket.on('toggleReady', ()=>{
+    const room=rooms.get(socket.data.room); if(!room||room.started) return;
+    const p=room.players.find(x=>x.id===socket.id && x.online); if(!p) return;
+    if(p.playerKey===room.hostPlayerKey) return socket.emit('errorMsg','房主无需准备');
+    p.ready=!p.ready;
+    addLog(room,`${p.name} ${p.ready?'已准备':'取消了准备'}`);
+    broadcast(room);
+  });
+  socket.on('kickPlayer', ({playerKey:targetKey})=>{
+    const room=rooms.get(socket.data.room); if(!room||room.started) return;
+    const host=room.players.find(p=>p.id===socket.id && p.online);
+    if(!host || host.playerKey!==room.hostPlayerKey) return socket.emit('errorMsg','只有房主可以移出玩家');
+    targetKey=String(targetKey||'');
+    if(!targetKey || targetKey===room.hostPlayerKey) return socket.emit('errorMsg','不能移出房主');
+    const idx=room.players.findIndex(p=>p.playerKey===targetKey);
+    if(idx<0) return;
+    const target=room.players[idx];
+    if(target.ready && target.online) return socket.emit('errorMsg','只能移出未准备或离线的玩家');
+    room.players.splice(idx,1);
+    room.scoreboard.delete(target.playerKey);
+    const client=target.id ? io.sockets.sockets.get(target.id) : null;
+    if(client){
+      client.emit('kicked',{reason:'你已被房主移出房间'});
+      client.leave(room.code);
+      client.data.room=null;
+    }
+    addLog(room,`房主已将 ${target.name} 移出房间`);
+    broadcast(room);
   });
   socket.on('startGame', ()=>{
     const room=rooms.get(socket.data.room); if(!room) return;
     if(room.hostPlayerKey!==room.players.find(p=>p.id===socket.id)?.playerKey) return socket.emit('errorMsg','只有房主可以开始');
     if(room.players.length<2) return socket.emit('errorMsg','至少需要2名玩家');
+    const guests=room.players.filter(p=>p.playerKey!==room.hostPlayerKey);
+    if(guests.some(p=>!p.online)) return socket.emit('errorMsg','有玩家离线，请等待其回来或由房主移出');
+    if(guests.some(p=>!p.ready)) return socket.emit('errorMsg','除房主外，所有玩家都准备后才能开局');
     startRound(room,false);
   });
   socket.on('restartGame', ()=>{

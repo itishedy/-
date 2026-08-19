@@ -254,3 +254,22 @@ button{touch-action:manipulation}
 .your-turn-alert{position:fixed;z-index:180;left:50%;top:26%;transform:translate(-50%,-50%);padding:18px 34px;border:3px solid #ffe488;border-radius:16px;background:#153b2df2;color:#fff4b8;font-family:serif;font-weight:900;font-size:42px;letter-spacing:.16em;box-shadow:0 18px 60px #000a,0 0 34px #ffd95f66;pointer-events:none;animation:yourTurnPop .25s ease-out}
 @keyframes yourTurnPop{from{transform:translate(-50%,-50%) scale(.7);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
 @media(max-width:760px){.your-turn-alert{top:22%;font-size:30px;padding:14px 24px}.turn-prompt.draw-turn{font-size:14px}}
+
+
+/* V17: pre-game ready room + host kick for unready players */
+.ready-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}
+.ready-actions .mahjong-btn{width:100%}
+.ready-btn.is-ready{background:#2b7157;color:#fff;border-color:#174b3a;box-shadow:0 3px 0 #0d382b}
+.player{display:flex;align-items:center;gap:6px}
+.player-info{min-width:0;flex:1}
+.player.ready{border-color:#5aa77c66;background:#4b95651a}
+.player.ready:after{content:'✓';position:absolute;right:9px;top:8px;color:#79d69d;font-weight:900}
+.player.ready .player-info{padding-right:18px}
+.kick-btn{flex:0 0 auto;border:1px solid #8d4a43;border-radius:6px;padding:4px 7px;background:#5c2926;color:#ffd8ce;font-size:10px;cursor:pointer;position:relative;z-index:2}
+.kick-btn:hover{filter:brightness(1.12)}
+@media(max-width:760px){
+  .ready-actions{grid-template-columns:1fr 1fr;gap:6px}
+  .ready-actions .mahjong-btn:only-child{grid-column:1/-1}
+  .player{max-width:220px}
+  .kick-btn{padding:4px 6px;font-size:9px}
+}
