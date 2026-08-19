@@ -4,6 +4,8 @@ let state = null;
 let selected = new Set();
 const $ = id => document.getElementById(id);
 let endReturnTimer=null;
+let lastYourTurnSeq=null;
+let yourTurnAlertTimer=null;
 const savedName=localStorage.getItem('bssm-player-name')||'';
 const savedRoom=localStorage.getItem('bssm-last-room')||'';
 window.addEventListener('DOMContentLoaded',()=>{ if($('name')) $('name').value=savedName; if($('code')) $('code').value=savedRoom; });
@@ -25,7 +27,7 @@ $('code').onkeydown = e => { if(e.key === 'Enter') $('join').click(); };
 $('name').onkeydown = e => { if(e.key === 'Enter') $('create').click(); };
 $('start').onclick = () => socket.emit('startGame');
 $('restart').onclick = () => {
-  if(confirm('确定要重开本局吗？所有人重新抓牌，本局积分清零，但房间累计积分保留。')) socket.emit('restartGame');
+  if(confirm('确定要重开本局吗？所有玩家都会留在房间，重新抓牌，并把本房间累计积分全部清零从0开始。')) socket.emit('restartGame');
 };
 $('endGame').onclick = () => {
   if(confirm('确定结束对局并关闭房间吗？将按当前累计积分结算，房间码随后失效。')) socket.emit('endGame');
@@ -33,7 +35,7 @@ $('endGame').onclick = () => {
 $('draw').onclick = () => socket.emit('draw');
 $('skip').onclick = () => socket.emit('skipTurn');
 $('discardBtn').onclick = () => {
-  if(selected.size < 3) return err('每次至少选择3个字再出牌');
+  if(selected.size < 2) return err('每次至少选择2个字再出牌');
   socket.emit('discard', {indices:[...selected]});
 };
 $('voteYes').onclick = () => socket.emit('voteDiscard',{approve:true});
@@ -295,13 +297,26 @@ function renderTurnPrompt(me,myTurn,voting){
   const sec=hasTimer?Math.max(0,Math.ceil((state.turnDeadline-Date.now())/1000)):null;
   if(myTurn){
     el.classList.add('my-turn');
-    if(!me?.hasDrawn) el.textContent='轮到你了：请先摸牌（摸牌后开始45秒）';
-    else el.textContent=`已摸牌：请选择要打的牌（至少2字），也可以跳过不出 · ${sec ?? 45}s`;
+    if(!me?.hasDrawn){
+      el.classList.add('draw-turn');
+      el.textContent=`到你了！请摸牌 · ${sec ?? 10}s`;
+    } else {
+      el.textContent=`已摸牌：请选择要打的牌（至少2字），也可以跳过不出 · ${sec ?? 45}s`;
+    }
     return;
   }
   const current=state.players.find(p=>p.playerKey===state.currentPlayerKey);
-  const suffix=hasTimer?` · ${sec}s`:' · 等待摸牌';
+  const phaseText=state.turnPhase==='draw'?'等待摸牌':'操作中';
+  const suffix=hasTimer?` · ${phaseText} ${sec}s`:` · ${phaseText}`;
   el.textContent=current?`等待 ${current.name} 操作${suffix}`:'等待下一位玩家…';
+}
+
+function showYourTurnAlert(){
+  const box=$('yourTurnAlert');
+  if(!box) return;
+  box.classList.remove('hidden');
+  clearTimeout(yourTurnAlertTimer);
+  yourTurnAlertTimer=setTimeout(()=>box.classList.add('hidden'),1800);
 }
 
 function renderVote(){
@@ -337,7 +352,7 @@ function refreshSelection(){
   const me=state?.players.find(p=>p.playerKey===playerKey);
   const myTurn=state?.started&&state.currentPlayerKey===playerKey;
   const canAct=myTurn&&!!me?.hasDrawn;
-  $('discardBtn').disabled=!!state?.pendingDiscard||!canAct||n<3;
+  $('discardBtn').disabled=!!state?.pendingDiscard||!canAct||n<2;
 }
 
 function tile(ch){
