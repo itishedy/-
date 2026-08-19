@@ -297,7 +297,13 @@ io.on('connection', socket=>{
     if(p.hasDrawn) return socket.emit('errorMsg','本回合已经摸过牌了，请出牌或跳过');
     clearTurnTimer(room); room.turnDeadline=null; room.turnPhase=null;
     if(!room.deck.length){ p.hasDrawn=true; addLog(room,`牌堆已空，${p.name} 本轮无需摸牌，45秒倒计时开始`); armTurnTimer(room); return broadcast(room); }
-    p.hand.push(room.deck.pop()); p.hasDrawn=true; addLog(room,`${p.name} 摸了一张牌，45秒倒计时开始`); armTurnTimer(room); broadcast(room);
+    const drawn=[];
+    for(let i=0;i<2 && room.deck.length;i++) drawn.push(room.deck.pop());
+    p.hand.push(...drawn);
+    p.hasDrawn=true;
+    addLog(room,`${p.name} 摸了${drawn.length}张牌，45秒倒计时开始`);
+    armTurnTimer(room);
+    broadcast(room);
   });
   socket.on('skipTurn', ()=>{
     const room=rooms.get(socket.data.room); if(!room||!room.started) return;

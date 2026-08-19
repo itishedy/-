@@ -299,7 +299,7 @@ function renderTurnPrompt(me,myTurn,voting){
     el.classList.add('my-turn');
     if(!me?.hasDrawn){
       el.classList.add('draw-turn');
-      el.textContent=`到你了！请摸牌 · ${sec ?? 10}s`;
+      el.textContent=`到你了！请摸2张牌 · ${sec ?? 10}s`;
     } else {
       el.textContent=`已摸牌：请选择要打的牌（至少2字），也可以跳过不出 · ${sec ?? 45}s`;
     }
